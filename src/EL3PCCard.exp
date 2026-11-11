@@ -1,0 +1,4 @@
+GetOTInstallInfo
+InitStreamModule
+TerminateStreamModule
+ValidateHardware
