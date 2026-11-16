@@ -9,57 +9,77 @@ driver is modelled on.
 
 ## What you need
 
-- Metrowerks CodeWarrior Pro (2.1 or later) or MPW with MrC, on a Mac or
-  in an emulator (SheepShaver/QEMU are fine for *building*).
-- Apple Universal Interfaces 3.2 or later.
-- The Open Transport SDK (2.0.1 or later) for the kernel-module headers
-  (`OpenTptModule.h`, `OpenTptLinks.h`, `OpenTptDevLinks.h`,
-  `OpenTptPCISupport.h`, `dlpi.h`) and the module stub libraries.
-- `dlpiether.h` and `dlpiuser.h`, the Mentat DLPI template headers. They
-  are in the Open Transport SDK and also in Apple's sample:
-  <https://developer.apple.com/library/archive/samplecode/PCCardNetworkSample/PCCardNetworkSample.zip>
-  Copy both next to the sources in `src/`. (They are Apple/Mentat
-  copyright, so they are not included here.)
+Everything except the compiler is on Apple's *Mac OS SDK* developer CDs
+(the October 1998 edition is known to have all of it, under
+*Development Kits*):
 
-The PC Card SDK is **not** needed: the driver only reads Name Registry
-properties and never calls PC Card Manager.
+- Metrowerks CodeWarrior Pro, or MPW with MrC.
+- `Interfaces&Libraries` from the SDK CD (Apple's Universal Interfaces
+  of the same vintage as the Open Transport SDK). Use these rather than
+  a newer set: Universal Interfaces 3.3 and later renamed the Open
+  Transport kernel headers.
+- `Open Transport 1.3 : Open Transport SDK`, both the
+  `Open Tpt Module Developer` and `Open Tpt Client Developer` folders.
+- Optional: `PC Card SDKs : PC Card Manager 3.0` for the `DispNameReg`
+  and `TupleDumper` utilities. The driver itself never calls PC Card
+  Manager and does not need this SDK to build.
 
-Classic tools expect Mac line endings and MPW expects MacRoman text. If
-you copy the files over from Unix, convert them first, e.g.
-`tr '\n' '\r' < EL3PCCard.c > EL3PCCard.c.mac` (CodeWarrior also reads
-Unix line endings directly).
+From `Open Tpt Module Developer` you use:
+
+| Item | Purpose |
+|---|---|
+| `Includes` | `OpenTptModule.h`, `OpenTptDevLinks.h`, `OpenTptPCISupport.h`, `dlpi.h`, ... |
+| `Libraries : OpenTptModuleLib` | PowerPC stub library: STREAMS kernel calls |
+| `Libraries : OpenTptKernelUtilLib` | PowerPC stub library: `OTEnterInterrupt`, `OTAllocMem`, ... |
+| `Samples : DLPI Template : dlpiether.c` | The DLPI template itself. It is **source that is compiled into the driver**, not a library. |
+| `Samples : DLPI Template : dlpiether.h`, `dlpiuser.h` | Its headers. Use these, not the copies in Apple's PCCardNetworkSample, so they match `dlpiether.c`. |
+| `Documents : DLPI Template.pdf` | The template's documentation |
+
+The `.o` files in `Libraries` are for 68K and are not used.
+
+Copy `dlpiether.c`, `dlpiether.h` and `dlpiuser.h` next to the sources
+in `src/` (they are Apple/Mentat copyright, so they are not in this
+repository).
+
+Classic tools expect Mac line endings. If you copy the sources over from
+Unix, CodeWarrior reads them as they are; for MPW convert them first.
 
 ## CodeWarrior
 
-The quickest route is to start from Apple's sample project, which already
-has the right libraries and settings:
+Create a new, empty Mac OS PowerPC project and add:
 
-1. Open `PCCardNetworkSample.mcp` and select the `myEnetDriver(PPC)`
-   target.
-2. Replace `EnetDrvrSrc.c` with `EL3PCCard.c`, `EnetDrvrSmpl.r` with
-   `EL3PCCard.r` and `EnetDrvrSmpl.exp` with `EL3PCCard.exp`. Put
-   `EL3Reg.h` and `EL3IO.h` in the same folder.
-3. Point the access paths at your Open Transport SDK, as the sample's
-   read-me describes.
-4. Check the PPC target settings: project type *Shared Library*, file
-   type `shlb`, creator `otan`, exports from the `.exp` file. The
-   fragment name comes from the `cfrg` resource in `EL3PCCard.r`.
-5. Build.
+- `EL3PCCard.c`, `dlpiether.c`, `EL3PCCard.r`
+- `OpenTptModuleLib`, `OpenTptKernelUtilLib` (from the SDK)
+- `DriverServicesLib`, `NameRegistryLib` (stub libraries from
+  `Interfaces&Libraries`)
 
-Starting from an empty project instead, link against the same stub
-libraries that target uses: the Open Transport module libraries from the
-SDK (the STREAMS kernel calls live in `OTKernelLib`, `OTEnterInterrupt`
-and friends in `OTKernelUtilLib`, plus the DLPI template library that
-exports the `dle_…` functions), and Apple's `DriverServicesLib` and
-`NameRegistryLib` for the interrupt and Name Registry calls. No C runtime
-is required.
+Do not add MSL or `InterfaceLib`; if the linker then reports an
+unresolved C library routine from `dlpiether.c`, add only the library
+that supplies it.
+
+Target settings:
+
+- *Access Paths*: `src/`, the SDK's module and client `Includes`
+  folders, and the `CIncludes` folder of `Interfaces&Libraries`. Remove
+  (or order last) CodeWarrior's own *MacOS Support* headers so the
+  older, matching set is the one found.
+- *PPC Target*: project type *Shared Library*, creator `otan`, type
+  `shlb`.
+- *PPC Linker*: clear the *Main* entry point field.
+- *PPC PEF*: export symbols *Use ".exp" file* (`EL3PCCard.exp`, named
+  to match the project).
+- *C/C++ Language*: a prefix file containing `#define OTKERNEL 1`, so
+  that `dlpiether.c` is compiled as kernel code as well.
+
+The fragment name comes from the `cfrg` resource in `EL3PCCard.r`.
 
 ## MPW (outline)
 
-    MrC EL3PCCard.c -o EL3PCCard.o -opt speed -d OTKERNEL=1 ∂
-        -i "{OTSDK}Open Tpt Module Interfaces:CIncludes:"
-    PPCLink EL3PCCard.o <the stub libraries above> ∂
-        -xm s -t shlb -c otan -@export EL3PCCard.exp ∂
+    MrC EL3PCCard.c -o EL3PCCard.o -opt speed -d OTKERNEL=1 -i <includes>
+    MrC dlpiether.c -o dlpiether.o -opt speed -d OTKERNEL=1 -i <includes>
+    PPCLink EL3PCCard.o dlpiether.o OpenTptModuleLib OpenTptKernelUtilLib
+        DriverServicesLib NameRegistryLib
+        -xm s -t shlb -c otan -@export EL3PCCard.exp
         -o "3Com EtherLink III PC Card"
     Rez EL3PCCard.r -a -o "3Com EtherLink III PC Card"
 
@@ -75,7 +95,7 @@ is required.
 The driver is located purely by name, so check the name first.
 
 - Use a Name Registry browser (Apple's *Display Name Registry*, or the
-  *PCCardDisplayNameRegistry* utility from the PC Card SDK) and find the
+  *DispNameReg* utility from the PC Card SDK) and find the
   card's node. Its `name` must be `pccard101,589` and its `device-type`
   `network`. If the name is different, change `kEL3ModuleName` in
   `EL3PCCard.c` and the fragment name in `EL3PCCard.r` to match (the

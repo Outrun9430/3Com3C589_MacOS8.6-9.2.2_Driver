@@ -102,8 +102,9 @@ These are the assumptions most worth checking first on a real machine:
 3. Exact prototypes of a few Open Transport kernel calls
    (`mi_timer_alloc`, `mi_timer`) differ between SDK versions; the
    compiler will say so.
-4. The DLPI template's stub library name for linking (see
-   `docs/BUILDING.md`).
+4. The driver was written against the Open Transport 2.0.1-era
+   template header; the build uses the 1.3 SDK's `dlpiether.c`, so small
+   differences may surface at compile time.
 
 ## References
 
